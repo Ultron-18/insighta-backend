@@ -141,4 +141,68 @@ const logout = async (req, res) => {
   }
 };
 
-module.exports = { githubLogin, githubCallback, refreshToken, logout };
+// CLI callback - exchanges code + code_verifier
+const cliCallback = async (req, res) => {
+  const { code, code_verifier } = req.body;
+
+  try {
+    const tokenRes = await axios.post(
+      'https://github.com/login/oauth/access_token',
+      {
+        client_id: process.env.GITHUB_CLIENT_ID,
+        client_secret: process.env.GITHUB_CLIENT_SECRET,
+        code,
+        redirect_uri: `http://localhost:9876/callback`,
+        code_verifier,
+      },
+      { headers: { Accept: 'application/json' } }
+    );
+
+    const githubAccessToken = tokenRes.data.access_token;
+
+    const userRes = await axios.get('https://api.github.com/user', {
+      headers: { Authorization: `Bearer ${githubAccessToken}` },
+    });
+
+    const { id, login, email, avatar_url } = userRes.data;
+
+    const user = await prisma.user.upsert({
+      where: { github_id: String(id) },
+      update: { username: login, email, avatar_url, last_login_at: new Date() },
+      create: {
+        github_id: String(id),
+        username: login,
+        email,
+        avatar_url,
+        role: 'analyst',
+        last_login_at: new Date(),
+      },
+    });
+
+    const accessToken = jwt.sign(
+      { userId: user.id, role: user.role },
+      process.env.JWT_SECRET,
+      { expiresIn: process.env.ACCESS_TOKEN_EXPIRY }
+    );
+
+    const refreshToken = uuidv4();
+    await prisma.refreshToken.create({
+      data: {
+        token: refreshToken,
+        user_id: user.id,
+        expires_at: new Date(Date.now() + 5 * 60 * 1000),
+      },
+    });
+
+    res.json({
+      status: 'success',
+      access_token: accessToken,
+      refresh_token: refreshToken,
+      user: { username: user.username, role: user.role },
+    });
+  } catch (error) {
+    res.status(500).json({ status: 'error', message: 'CLI authentication failed' });
+  }
+};
+
+module.exports = { githubLogin, githubCallback, refreshToken, logout, cliCallback };
