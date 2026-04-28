@@ -141,9 +141,8 @@ const logout = async (req, res) => {
   }
 };
 
-// CLI callback - exchanges code + code_verifier
 const cliCallback = async (req, res) => {
-  const { code, code_verifier } = req.body;
+  const { code } = req.body;
 
   try {
     const tokenRes = await axios.post(
@@ -152,13 +151,16 @@ const cliCallback = async (req, res) => {
         client_id: process.env.GITHUB_CLIENT_ID,
         client_secret: process.env.GITHUB_CLIENT_SECRET,
         code,
-        redirect_uri: `http://localhost:9876/callback`,
-        code_verifier,
+        redirect_uri: 'http://localhost:9876/callback',
       },
       { headers: { Accept: 'application/json' } }
     );
 
     const githubAccessToken = tokenRes.data.access_token;
+
+    if (!githubAccessToken) {
+      return res.status(400).json({ status: 'error', message: 'Failed to get GitHub token' });
+    }
 
     const userRes = await axios.get('https://api.github.com/user', {
       headers: { Authorization: `Bearer ${githubAccessToken}` },
@@ -185,10 +187,10 @@ const cliCallback = async (req, res) => {
       { expiresIn: process.env.ACCESS_TOKEN_EXPIRY }
     );
 
-    const refreshToken = uuidv4();
+    const newRefreshToken = uuidv4();
     await prisma.refreshToken.create({
       data: {
-        token: refreshToken,
+        token: newRefreshToken,
         user_id: user.id,
         expires_at: new Date(Date.now() + 5 * 60 * 1000),
       },
@@ -197,10 +199,11 @@ const cliCallback = async (req, res) => {
     res.json({
       status: 'success',
       access_token: accessToken,
-      refresh_token: refreshToken,
+      refresh_token: newRefreshToken,
       user: { username: user.username, role: user.role },
     });
   } catch (error) {
+    console.error(error.response?.data || error.message);
     res.status(500).json({ status: 'error', message: 'CLI authentication failed' });
   }
 };
