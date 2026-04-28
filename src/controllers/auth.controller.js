@@ -144,27 +144,35 @@ const logout = async (req, res) => {
 const cliCallback = async (req, res) => {
   const { code } = req.body;
 
-  try {
+ try {
     const tokenRes = await axios.post(
-  'https://github.com/login/oauth/access_token',
-  {
-    client_id: process.env.GITHUB_CLI_CLIENT_ID,
-    client_secret: process.env.GITHUB_CLI_CLIENT_SECRET,
-    code,
-  },
-  { headers: { Accept: 'application/json' } }
-);
+      'https://github.com/login/oauth/access_token',
+      {
+        client_id: process.env.GITHUB_CLI_CLIENT_ID,
+        client_secret: process.env.GITHUB_CLI_CLIENT_SECRET,
+        code,
+      },
+      { headers: { Accept: 'application/json' } }
+    );
+
+    console.log('GitHub response:', tokenRes.data);
 
     const githubAccessToken = tokenRes.data.access_token;
 
     if (!githubAccessToken) {
+      console.log('No access token received');
       return res.status(400).json({ status: 'error', message: 'Failed to get GitHub token' });
     }
+
+    console.log('Got access token, fetching user...');
 
     const userRes = await axios.get('https://api.github.com/user', {
       headers: { Authorization: `Bearer ${githubAccessToken}` },
     });
 
+    console.log('GitHub user:', userRes.data.login);
+
+    // ... rest of code
     const { id, login, email, avatar_url } = userRes.data;
 
     const user = await prisma.user.upsert({
