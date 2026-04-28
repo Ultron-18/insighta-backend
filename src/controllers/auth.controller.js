@@ -144,6 +144,9 @@ const logout = async (req, res) => {
 const cliCallback = async (req, res) => {
   const { code } = req.body;
 
+  console.log('CLI client ID being used:', process.env.GITHUB_CLI_CLIENT_ID);
+  console.log('Code received:', code);
+
   try {
     const tokenRes = await axios.post(
       'https://github.com/login/oauth/access_token',
@@ -155,9 +158,12 @@ const cliCallback = async (req, res) => {
       { headers: { Accept: 'application/json' } }
     );
 
-    const githubAccessToken = tokenRes.data.access_token;
+    console.log('GitHub response:', tokenRes.data);
+
+      const githubAccessToken = tokenRes.data.access_token;
 
     if (!githubAccessToken) {
+      console.log('No access token received');
       return res.status(400).json({ status: 'error', message: 'Failed to get GitHub token' });
     }
 
