@@ -144,9 +144,16 @@ const logout = async (req, res) => {
 const cliCallback = async (req, res) => {
   const { code } = req.body;
 
-  console.log('CLI client ID being used:', process.env.GITHUB_CLI_CLIENT_ID);
-  console.log('Code received:', code);
+  if (!code) {
+    return res.status(400).json({ status: 'error', message: 'Missing OAuth code' });
+  }
 
+  console.log('[CLI] client_id:', process.env.GITHUB_CLI_CLIENT_ID ? 'set' : 'MISSING');
+  console.log('[CLI] client_secret:', process.env.GITHUB_CLI_CLIENT_SECRET ? 'set' : 'MISSING');
+  console.log('[CLI] code received:', code.slice(0, 8) + '...');
+
+  // Step 1: Exchange code for GitHub access token
+  let githubAccessToken;
   try {
     const tokenRes = await axios.post(
       'https://github.com/login/oauth/access_token',
@@ -158,34 +165,58 @@ const cliCallback = async (req, res) => {
       { headers: { Accept: 'application/json' } }
     );
 
-    console.log('GitHub response:', tokenRes.data);
-
-      const githubAccessToken = tokenRes.data.access_token;
+    console.log('[CLI] GitHub token response:', JSON.stringify(tokenRes.data));
+    githubAccessToken = tokenRes.data.access_token;
 
     if (!githubAccessToken) {
-      console.log('No access token received');
-      return res.status(400).json({ status: 'error', message: 'Failed to get GitHub token' });
+      return res.status(400).json({
+        status: 'error',
+        message: 'Failed to get GitHub token',
+        detail: tokenRes.data.error_description || tokenRes.data.error || 'No access_token in response',
+      });
     }
+  } catch (err) {
+    console.error('[CLI] Token exchange error:', err.message);
+    return res.status(502).json({ status: 'error', message: 'GitHub token exchange failed', detail: err.message });
+  }
 
+  // Step 2: Fetch GitHub user info
+  let githubUser;
+  try {
     const userRes = await axios.get('https://api.github.com/user', {
       headers: { Authorization: `Bearer ${githubAccessToken}` },
     });
+    githubUser = userRes.data;
+    console.log('[CLI] GitHub user:', githubUser.login);
+  } catch (err) {
+    console.error('[CLI] GitHub user fetch error:', err.message);
+    return res.status(502).json({ status: 'error', message: 'Failed to fetch GitHub user info', detail: err.message });
+  }
 
-    const { id, login, email, avatar_url } = userRes.data;
+  const { id, login, email, avatar_url } = githubUser;
 
-    const user = await prisma.user.upsert({
+  // Step 3: Upsert user in database
+  let user;
+  try {
+    user = await prisma.user.upsert({
       where: { github_id: String(id) },
-      update: { username: login, email, avatar_url, last_login_at: new Date() },
+      update: { username: login, email: email || null, avatar_url: avatar_url || null, last_login_at: new Date() },
       create: {
         github_id: String(id),
         username: login,
-        email,
-        avatar_url,
+        email: email || null,
+        avatar_url: avatar_url || null,
         role: 'analyst',
         last_login_at: new Date(),
       },
     });
+  } catch (err) {
+    console.error('[CLI] DB upsert error:', err.message);
+    return res.status(500).json({ status: 'error', message: 'Database error when saving user', detail: err.message });
+  }
 
+  // Step 4: Issue JWT + refresh token
+  try {
     const accessToken = jwt.sign(
       { userId: user.id, role: user.role },
       process.env.JWT_SECRET,
@@ -201,15 +232,15 @@ const cliCallback = async (req, res) => {
       },
     });
 
-    res.json({
+    return res.json({
       status: 'success',
       access_token: accessToken,
       refresh_token: newRefreshToken,
       user: { username: user.username, role: user.role },
     });
-  } catch (error) {
-    console.error(error.response?.data || error.message);
-    res.status(500).json({ status: 'error', message: 'CLI authentication failed' });
+  } catch (err) {
+    console.error('[CLI] Token issuance error:', err.message);
+    return res.status(500).json({ status: 'error', message: 'Failed to issue tokens', detail: err.message });
   }
 };
 
