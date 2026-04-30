@@ -71,16 +71,23 @@ const githubCallback = async (req, res) => {
       },
     });
 
-    res.json({
-      status: 'success',
-      access_token: accessToken,
-      refresh_token: refreshToken,
-      user: {
-        username: user.username,
-        role: user.role,
-        avatar_url: user.avatar_url,
-      },
+   // Set HTTP-only cookies
+    res.cookie('access_token', accessToken, {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'none',
+      maxAge: 3 * 60 * 1000,
     });
+
+    res.cookie('refresh_token', refreshToken, {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'none',
+      maxAge: 5 * 60 * 1000,
+    });
+
+    // Redirect to web portal dashboard
+    res.redirect(`${process.env.WEB_URL}/dashboard`);
   } catch (error) {
     res.status(500).json({ status: 'error', message: 'Authentication failed' });
   }
