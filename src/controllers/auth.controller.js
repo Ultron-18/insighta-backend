@@ -148,6 +148,18 @@ const logout = async (req, res) => {
   }
 };
 
+const getMe = async (req, res) => {
+  res.json({
+    status: 'success',
+    user: {
+      username: req.user.username,
+      email: req.user.email,
+      role: req.user.role,
+      avatar_url: req.user.avatar_url,
+    },
+  });
+};
+
 const cliCallback = async (req, res) => {
   const { code } = req.body;
 
@@ -251,4 +263,5 @@ const cliCallback = async (req, res) => {
   }
 };
 
-module.exports = { githubLogin, githubCallback, refreshToken, logout, cliCallback };
+module.exports = { githubLogin, githubCallback, refreshToken, logout, cliCallback, getMe };
+  
