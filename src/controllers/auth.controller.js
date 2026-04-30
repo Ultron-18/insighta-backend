@@ -7,7 +7,7 @@ const prisma = require('../lib/prisma');
 const githubLogin = (req, res) => {
   const params = new URLSearchParams({
     client_id: process.env.GITHUB_CLIENT_ID,
-    client_secret: process.env.GITHUB_CLI_CLIENT_SECRET,
+    redirect_uri: process.env.GITHUB_CALLBACK_URL,
     scope: 'read:user user:email',
   });
 
