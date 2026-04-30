@@ -9,6 +9,7 @@ const profileRoutes = require('./routes/profile.routes');
 const { authenticate } = require('./middleware/auth.middleware');
 const { requireApiVersion } = require('./middleware/apiVersion.middleware');
 const { authLimiter, apiLimiter } = require('./middleware/rateLimiter.middleware');
+const cookieParser = require('cookie-parser');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -35,3 +36,6 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
+
+// Cookie parser
+app.use(cookieParser());
