@@ -95,7 +95,7 @@ const githubCallback = async (req, res) => {
 
 // Refresh tokens
 const refreshToken = async (req, res) => {
-  const { refresh_token } = req.body;
+  const refresh_token = req.cookies?.refresh_token || req.body?.refresh_token;
 
   try {
     const stored = await prisma.refreshToken.findUnique({
@@ -126,11 +126,20 @@ const refreshToken = async (req, res) => {
       },
     });
 
-    res.json({
-      status: 'success',
-      access_token: accessToken,
-      refresh_token: newRefreshToken,
+   res.cookie('access_token', accessToken, {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'none',
+      maxAge: 3 * 60 * 1000,
     });
+
+    res.cookie('refresh_token', newRefreshToken, {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'none',
+      maxAge: 5 * 60 * 1000,
+    });
+
   } catch (error) {
     res.status(500).json({ status: 'error', message: 'Token refresh failed' });
   }
