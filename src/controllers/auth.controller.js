@@ -86,8 +86,8 @@ const githubCallback = async (req, res) => {
       maxAge: 5 * 60 * 1000,
     });
 
-    // Redirect to web portal dashboard
-    res.redirect(`${process.env.WEB_URL}/dashboard`);
+   // Redirect to web portal dashboard with tokens
+    res.redirect(`${process.env.WEB_URL}/dashboard?access_token=${accessToken}&refresh_token=${refreshToken}`);
   } catch (error) {
     res.status(500).json({ status: 'error', message: 'Authentication failed' });
   }
