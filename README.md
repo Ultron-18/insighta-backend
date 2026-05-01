@@ -102,3 +102,5 @@ All secrets and environment variables should be stored securely and not committe
 For issues, questions, or feature requests, please open an issue or submit a pull request.
 
 ## License
+
+MIT
