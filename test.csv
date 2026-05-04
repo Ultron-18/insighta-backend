@@ -1,0 +1,4 @@
+name,gender,age,country_id
+John Doe,male,25,US
+Jane Smith,female,30,NG
+Invalid,,−5,
