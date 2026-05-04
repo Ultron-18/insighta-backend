@@ -1,5 +1,7 @@
 const prisma = require('../lib/prisma');
 const axios = require('axios');
+const { getOrSet, invalidate } = require('../lib/cache');
+const { parseNaturalLanguage, generateCacheKey } = require('../lib/normalizer');
 
 // Helper: fetch profile data from external APIs
 const fetchProfileData = async (name) => {
@@ -12,7 +14,6 @@ const fetchProfileData = async (name) => {
   const gender = genderRes.status === 'fulfilled' ? genderRes.value.data : {};
   const age = ageRes.status === 'fulfilled' ? ageRes.value.data : {};
   const country = countryRes.status === 'fulfilled' ? countryRes.value.data : {};
-
   const topCountry = country.country?.[0] || {};
 
   return {
@@ -50,29 +51,35 @@ const getProfiles = async (req, res) => {
       if (max_age) where.age.lte = parseInt(max_age);
     }
 
-    const total = await prisma.profile.count({ where });
-    const total_pages = Math.ceil(total / limit);
-    const profiles = await prisma.profile.findMany({
-      where,
-      orderBy: { [sort_by]: order },
-      skip: (page - 1) * parseInt(limit),
-      take: parseInt(limit),
+    const cacheKey = generateCacheKey('profiles', where, { page, limit, sort_by, order });
+
+    const result = await getOrSet(cacheKey, async () => {
+      const total = await prisma.profile.count({ where });
+      const total_pages = Math.ceil(total / limit);
+      const profiles = await prisma.profile.findMany({
+        where,
+        orderBy: { [sort_by]: order },
+        skip: (page - 1) * parseInt(limit),
+        take: parseInt(limit),
+      });
+      return { total, total_pages, profiles };
     });
 
     res.json({
       status: 'success',
       page: parseInt(page),
       limit: parseInt(limit),
-      total,
-      total_pages,
+      total: result.total,
+      total_pages: result.total_pages,
       links: {
         self: `/api/profiles?page=${page}&limit=${limit}`,
-        next: page < total_pages ? `/api/profiles?page=${parseInt(page) + 1}&limit=${limit}` : null,
+        next: page < result.total_pages ? `/api/profiles?page=${parseInt(page) + 1}&limit=${limit}` : null,
         prev: page > 1 ? `/api/profiles?page=${parseInt(page) - 1}&limit=${limit}` : null,
       },
-      data: profiles,
+      data: result.profiles,
     });
   } catch (error) {
+    console.error(error);
     res.status(500).json({ status: 'error', message: 'Failed to fetch profiles' });
   }
 };
@@ -80,9 +87,10 @@ const getProfiles = async (req, res) => {
 // GET /api/profiles/:id
 const getProfileById = async (req, res) => {
   try {
-    const profile = await prisma.profile.findUnique({
-      where: { id: req.params.id },
-    });
+    const cacheKey = `profile:${req.params.id}`;
+    const profile = await getOrSet(cacheKey, () =>
+      prisma.profile.findUnique({ where: { id: req.params.id } })
+    );
 
     if (!profile) {
       return res.status(404).json({ status: 'error', message: 'Profile not found' });
@@ -104,10 +112,12 @@ const createProfile = async (req, res) => {
     }
 
     const profileData = await fetchProfileData(name);
-
     const profile = await prisma.profile.create({
       data: { name, ...profileData },
     });
+
+    // Invalidate profiles cache
+    invalidate('profiles');
 
     res.json({ status: 'success', data: profile });
   } catch (error) {
@@ -124,39 +134,33 @@ const searchProfiles = async (req, res) => {
       return res.status(400).json({ status: 'error', message: 'Search query required' });
     }
 
-    // Natural language parsing
-    const where = {};
-    const lower = q.toLowerCase();
+    // Parse and normalize natural language query
+    const filters = parseNaturalLanguage(q);
+    const cacheKey = generateCacheKey('search', filters, { page, limit });
 
-    if (lower.includes('male') && !lower.includes('female')) where.gender = 'male';
-    if (lower.includes('female')) where.gender = 'female';
-    if (lower.includes('nigeria') || lower.includes('ng')) where.country_id = 'NG';
-    if (lower.includes('adult')) where.age_group = 'adult';
-    if (lower.includes('minor')) where.age_group = 'minor';
-    if (lower.includes('senior')) where.age_group = 'senior';
-    if (lower.includes('young')) where.age = { lte: 30 };
-
-    const total = await prisma.profile.count({ where });
-    const total_pages = Math.ceil(total / parseInt(limit));
-
-    const profiles = await prisma.profile.findMany({
-      where,
-      skip: (parseInt(page) - 1) * parseInt(limit),
-      take: parseInt(limit),
+    const result = await getOrSet(cacheKey, async () => {
+      const total = await prisma.profile.count({ where: filters });
+      const total_pages = Math.ceil(total / parseInt(limit));
+      const profiles = await prisma.profile.findMany({
+        where: filters,
+        skip: (parseInt(page) - 1) * parseInt(limit),
+        take: parseInt(limit),
+      });
+      return { total, total_pages, profiles };
     });
 
     res.json({
       status: 'success',
       page: parseInt(page),
       limit: parseInt(limit),
-      total,
-      total_pages,
+      total: result.total,
+      total_pages: result.total_pages,
       links: {
         self: `/api/profiles/search?q=${q}&page=${page}&limit=${limit}`,
-        next: page < total_pages ? `/api/profiles/search?q=${q}&page=${parseInt(page) + 1}&limit=${limit}` : null,
+        next: page < result.total_pages ? `/api/profiles/search?q=${q}&page=${parseInt(page) + 1}&limit=${limit}` : null,
         prev: page > 1 ? `/api/profiles/search?q=${q}&page=${parseInt(page) - 1}&limit=${limit}` : null,
       },
-      data: profiles,
+      data: result.profiles,
     });
   } catch (error) {
     res.status(500).json({ status: 'error', message: 'Search failed' });
