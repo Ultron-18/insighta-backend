@@ -10,6 +10,7 @@ const { authenticate } = require('./middleware/auth.middleware');
 const { requireApiVersion } = require('./middleware/apiVersion.middleware');
 const { authLimiter, apiLimiter } = require('./middleware/rateLimiter.middleware');
 const cookieParser = require('cookie-parser');
+const ingestRoutes = require('./routes/ingest.routes');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -26,6 +27,9 @@ app.use('/auth', authLimiter, authRoutes);
 
 // Protected routes
 app.use('/api/profiles', apiLimiter, authenticate, requireApiVersion, profileRoutes);
+
+// Add after profile routes
+app.use('/api/ingest', apiLimiter, ingestRoutes);
 
 // Health check
 app.get('/', (req, res) => {
